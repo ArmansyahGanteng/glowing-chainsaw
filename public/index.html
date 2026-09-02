@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="FENCT ALL CODE - public source code analysis and extraction platform" />
+    <title>FENCT ALL CODE</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+    <div class="bg-orb orb-3"></div>
+
+    <header class="topbar glass-panel">
+      <div class="brand-wrap">
+        <div class="brand-mark">
+          <img src="/logo/logo.jpg" alt="XenzioHub logo" onerror="this.style.display='none'; this.parentElement.classList.add('logo-missing');" />
+          <span class="brand-fallback">X</span>
+        </div>
+        <div>
+          <div class="brand-name">XenzioHub</div>
+          <div class="brand-sub">by Armansyah</div>
+        </div>
+      </div>
+
+      <nav class="topnav">
+        <a href="#">Overview</a>
+        <a href="#">Files</a>
+        <a href="#">Stack</a>
+        <a href="#">Export</a>
+      </nav>
+
+      <div class="nav-actions">
+        <button id="last-scan-btn" class="ghost-button recent-button" type="button">
+          <span class="recent-label">Last scan</span>
+          <span id="last-scan-meta">No data yet</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="hero glass-panel">
+        <div class="hero-copy">
+          <div class="eyebrow">PUBLIC URL INSPECTION</div>
+          <h1>Review a site's source without the guesswork.</h1>
+          <p>
+            Paste a public URL, inspect the files, spot the stack, and export the result in one clean pass.
+          </p>
+
+          <form id="analysis-form" class="search-form">
+            <label class="input-wrap">
+              <span>Website URL</span>
+              <div class="field-row">
+                <input
+                  id="url-input"
+                  type="url"
+                  placeholder="https://example.com"
+                  aria-label="Website URL"
+                  required
+                />
+                <button id="analyze-button" type="submit">Inspect</button>
+              </div>
+            </label>
+          </form>
+
+          <div class="hero-meta">
+            <span>Public pages</span>
+            <span>Source review</span>
+            <span>ZIP export</span>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="pulse-card glass-panel">
+            <div class="status-row">
+              <span class="status-dot"></span>
+              <span>Live analysis</span>
+            </div>
+            <div class="mini-bars">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="network-graph">
+              <div class="node node-a"></div>
+              <div class="node node-b"></div>
+              <div class="node node-c"></div>
+              <div class="line line-a"></div>
+              <div class="line line-b"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="status-panel" class="status-panel glass-panel hidden">
+        <div class="status-header">
+          <div>
+            <div class="eyebrow">PROCESS STATUS</div>
+            <h2 id="status-title">Checking the site</h2>
+          </div>
+          <span id="status-value" class="status-badge">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <p id="status-message">Preparing the source review...</p>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card glass-panel">
+          <span class="stat-label">Files found</span>
+          <strong id="stat-files">0</strong>
+        </article>
+        <article class="stat-card glass-panel">
+          <span class="stat-label">Total size</span>
+          <strong id="stat-size">0 KB</strong>
+        </article>
+        <article class="stat-card glass-panel">
+          <span class="stat-label">Detected tech</span>
+          <strong id="stat-tech">0</strong>
+        </article>
+        <article class="stat-card glass-panel">
+          <span class="stat-label">Target domain</span>
+          <strong id="stat-url">-</strong>
+        </article>
+      </section>
+
+      <section class="dashboard">
+        <aside class="left-panel glass-panel">
+          <div class="section-header compact">
+            <h3>Detected stack</h3>
+            <span id="tech-count">0</span>
+          </div>
+          <div id="tech-list" class="tag-list"></div>
+
+          <div class="section-header compact">
+            <h3>File groups</h3>
+            <span id="group-count">0</span>
+          </div>
+          <div id="group-list" class="group-list"></div>
+        </aside>
+
+        <div class="main-panel glass-panel">
+          <div class="toolbar">
+            <div class="search-box">
+              <input id="file-search" type="search" placeholder="Search files or code" />
+            </div>
+            <div class="toolbar-actions">
+              <button class="secondary-button" id="select-all-btn" type="button">Select all</button>
+              <button class="secondary-button" id="download-selected-btn" type="button">Download selected</button>
+              <button class="primary-button" id="download-zip-btn" type="button">Download ZIP</button>
+            </div>
+          </div>
+
+          <div class="file-grid">
+            <div id="file-list" class="file-list"></div>
+            <div id="viewer" class="viewer">
+              <div class="viewer-empty">
+                <p>Choose a file to inspect the source.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
