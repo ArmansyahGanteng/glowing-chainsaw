@@ -9,7 +9,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_FILES = 25;
+const MAX_FILES = 80;
+const MAX_HTML_PAGES = 20;
 const VALID_PROTOCOLS = ['http:', 'https:'];
 
 function normalizeUrl(input) {
@@ -124,72 +125,99 @@ async function fetchText(url, headers = {}) {
 async function analyzeWebsite(inputUrl) {
   const url = normalizeUrl(inputUrl);
   const base = new URL(url);
-
-  const mainHtml = await fetchText(url);
-  const $ = cheerio.load(mainHtml.text);
-
+  const origin = base.origin;
   const files = [];
   const seen = new Set();
+  const pageQueue = [url];
+  const visitedPages = new Set();
+  let rootHtml = '';
+  let rootTitle = 'Untitled Page';
+  let rootDescription = 'No description available';
 
   const addFile = (name, content, type, source, size) => {
     const normalizedName = normalizePathname(name || 'index.html');
-    if (seen.has(normalizedName)) return;
+    if (seen.has(normalizedName) || files.length >= MAX_FILES) return false;
     seen.add(normalizedName);
-    files.push({
-      id: `${source}-${normalizedName}`,
-      name: normalizedName,
-      type,
-      source,
-      size,
-      content
-    });
+    files.push({ id: `${source}-${normalizedName}`, name: normalizedName, type, source, size, content });
+    return true;
   };
 
-  addFile(base.pathname || '/index.html', mainHtml.text, 'html', 'entry', mainHtml.text.length);
-
-  const refs = [];
-  $('script[src]').each((_, el) => refs.push($(el).attr('src')));
-  $('link[rel="stylesheet"][href]').each((_, el) => refs.push($(el).attr('href')));
-  $('img[src]').each((_, el) => refs.push($(el).attr('src')));
-  $('source[src]').each((_, el) => refs.push($(el).attr('src')));
-
-  for (const ref of refs) {
-    if (!ref || ref.startsWith('data:') || ref.startsWith('#')) continue;
-
+  const fetchResource = async (targetUrl, source = 'asset') => {
+    const parsed = new URL(targetUrl);
+    if (parsed.origin !== origin) return;
+    const type = getFileType(parsed.pathname);
+    if (type === 'image' || type === 'font' || type === 'other') return;
     try {
-      const targetUrl = new URL(ref, url).toString();
-      const parsedPath = new URL(targetUrl);
-      const type = getFileType(parsedPath.pathname);
-      if (type === 'image' || type === 'font' || type === 'other') {
-        continue;
-      }
-
-      const response = await fetchText(targetUrl);
-      const content = response.text;
-      const safeName = normalizePathname(parsedPath.pathname.replace(base.origin, '').replace(/^\/+/, '') || 'index.html');
-      addFile(safeName, content, type, 'asset', content.length);
-      if (files.length >= MAX_FILES) break;
-    } catch (error) {
-      // Ignore unreachable assets to keep the analysis resilient.
+      const response = await fetchText(parsed.toString());
+      const name = normalizePathname(parsed.pathname || 'index.html');
+      addFile(name, response.text, type, source, response.text.length);
+    } catch (_) {
+      // Public resource unavailable: skip it and continue the scan.
     }
+  };
+
+  while (pageQueue.length && visitedPages.size < MAX_HTML_PAGES && files.length < MAX_FILES) {
+    const pageUrl = pageQueue.shift();
+    const pageKey = new URL(pageUrl).toString();
+    if (visitedPages.has(pageKey)) continue;
+    visitedPages.add(pageKey);
+
+    let page;
+    try {
+      page = await fetchText(pageKey);
+    } catch (error) {
+      if (pageKey === url) throw error;
+      continue;
+    }
+
+    const $ = cheerio.load(page.text);
+    const pagePath = new URL(pageKey).pathname || '/index.html';
+    addFile(pagePath, page.text, 'html', pageKey === url ? 'entry' : 'page', page.text.length);
+
+    if (!rootHtml) {
+      rootHtml = page.text;
+      rootTitle = $('title').first().text().trim() || rootTitle;
+      rootDescription = $('meta[name="description"]').attr('content') || rootDescription;
+    }
+
+    const assetRefs = [];
+    $('script[src]').each((_, el) => assetRefs.push($(el).attr('src')));
+    $('link[rel="stylesheet"][href]').each((_, el) => assetRefs.push($(el).attr('href')));
+
+    for (const ref of assetRefs) {
+      if (!ref || ref.startsWith('data:') || ref.startsWith('#')) continue;
+      try { await fetchResource(new URL(ref, pageKey).toString()); } catch (_) {}
+      if (files.length >= MAX_FILES) break;
+    }
+
+    // Follow public same-origin page links. This does not reveal hidden server files;
+    // it only discovers pages that are reachable from public links.
+    $('a[href]').each((_, el) => {
+      if (pageQueue.length + visitedPages.size >= MAX_HTML_PAGES) return;
+      const href = $(el).attr('href');
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) return;
+      try {
+        const target = new URL(href, pageKey);
+        if (target.origin !== origin) return;
+        const ext = path.posix.extname(target.pathname).toLowerCase();
+        if (ext && !['.html', '.htm', '.php'].includes(ext)) return;
+        target.hash = '';
+        if (!visitedPages.has(target.toString())) pageQueue.push(target.toString());
+      } catch (_) {}
+    });
   }
 
-  const detectedTech = detectTechFromHtml(mainHtml.text, files);
-
+  const detectedTech = detectTechFromHtml(rootHtml, files);
   return {
     url,
-    title: $('title').first().text().trim() || 'Untitled Page',
-    metaDescription: $('meta[name="description"]').attr('content') || 'No description available',
+    title: rootTitle,
+    metaDescription: rootDescription,
     fileCount: files.length,
     totalSize: files.reduce((sum, file) => sum + (file.size || 0), 0),
     technologies: detectedTech,
-    files: files.map((file) => ({
-      ...file,
-      typeLabel: file.type.toUpperCase()
-    }))
+    files: files.map((file) => ({ ...file, typeLabel: file.type.toUpperCase() }))
   };
 }
-
 app.post('/api/analyze', async (req, res) => {
   try {
     const { url } = req.body || {};

@@ -881,3 +881,15 @@ input {
 .brand-mark.logo-missing .brand-fallback {
   display: block;
 }
+
+/* Added without changing the existing visual language */
+.history-panel { margin-top: 18px; padding: 18px; }
+.history-list { display: grid; gap: 8px; }
+.history-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 12px; background: rgba(255,255,255,.02); color: inherit; text-align: left; cursor: pointer; }
+.history-item:hover { background: rgba(255,255,255,.05); }
+.history-item strong, .history-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item small { opacity: .65; margin-top: 3px; }
+.history-item time { opacity: .65; white-space: nowrap; font-size: .82rem; }
+.file-item.folder-item { background: rgba(255,255,255,.025); }
+.folder-toggle { margin-right: 8px; font-size: .8rem; opacity: .75; }
+.folder-name { font-weight: 700; }

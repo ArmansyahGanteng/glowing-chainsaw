@@ -3,7 +3,8 @@ const state = {
   selectedFileId: null,
   selectedIds: new Set(),
   filteredFiles: [],
-  techs: []
+  techs: [],
+  openFolders: new Set()
 };
 
 const elements = {
@@ -31,6 +32,8 @@ const elements = {
   downloadZipBtn: document.getElementById('download-zip-btn'),
   lastScanBtn: document.getElementById('last-scan-btn'),
   lastScanMeta: document.getElementById('last-scan-meta'),
+  historyList: document.getElementById('history-list'),
+  historyMeta: document.getElementById('history-meta'),
 };
 
 const recentScanState = {
@@ -103,50 +106,60 @@ function updateStats({ fileCount, totalSize, technologies, url }) {
 
 function renderFileList() {
   if (!elements.fileSearch) return;
-
   const query = elements.fileSearch.value.trim().toLowerCase();
-  state.filteredFiles = state.files.filter((file) => {
-    const haystack = `${file.name} ${file.type} ${file.content || ''}`.toLowerCase();
-    return haystack.includes(query);
-  });
-
+  const matching = state.files.filter((file) => `${file.name} ${file.type} ${file.content || ''}`.toLowerCase().includes(query));
+  state.filteredFiles = matching;
   if (!elements.fileList) return;
-
   elements.fileList.innerHTML = '';
-  if (!state.filteredFiles.length) {
-    elements.fileList.innerHTML = '<div class="viewer-empty"><p>No files match your search.</p></div>';
-    return;
-  }
+  if (!matching.length) { elements.fileList.innerHTML = '<div class="viewer-empty"><p>No files match your search.</p></div>'; return; }
 
-  state.filteredFiles.forEach((file) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `file-item ${state.selectedFileId === file.id ? 'active' : ''} ${state.selectedIds.has(file.id) ? 'selected' : ''}`;
-    button.innerHTML = `
-      <div class="file-main">
-        <span class="file-icon">${file.type.toUpperCase().slice(0, 2)}</span>
-        <div class="file-meta">
-          <span class="file-name">${file.name}</span>
-          <small>${file.type.toUpperCase()} • ${formatBytes(file.size || file.content?.length || 0)}</small>
-        </div>
-      </div>
-      <span class="file-check"></span>
-    `;
-
-    button.addEventListener('click', (event) => {
-      if (event.target.closest('.file-check')) {
-        toggleSelect(file.id);
-        return;
-      }
-      state.selectedFileId = file.id;
-      renderViewer(file);
-      renderFileList();
-    });
-
-    elements.fileList.appendChild(button);
+  const folders = new Map();
+  matching.forEach((file) => {
+    const parts = file.name.split('/').filter(Boolean);
+    let current = folders;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const key = parts.slice(0, i + 1).join('/');
+      if (!current.has(parts[i])) current.set(parts[i], { key, children: new Map(), files: [] });
+      current = current.get(parts[i]).children;
+    }
+    const parentKey = parts.slice(0, -1).join('/');
+    if (parentKey) {
+      let node = folders;
+      for (const part of parts.slice(0, -1)) node = node.get(part).children;
+    }
   });
-}
 
+  const renderEntries = (prefix = '') => {
+    const folderNames = new Set();
+    matching.forEach((file) => {
+      const parts = file.name.split('/').filter(Boolean);
+      if (prefix) {
+        if (!file.name.startsWith(prefix + '/')) return;
+        const rest = file.name.slice(prefix.length + 1).split('/');
+        if (rest.length > 1) folderNames.add(rest[0]);
+      } else if (parts.length > 1) folderNames.add(parts[0]);
+    });
+    [...folderNames].sort().forEach((folder) => {
+      const key = prefix ? `${prefix}/${folder}` : folder;
+      const open = state.openFolders.has(key) || !!query;
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'file-item folder-item';
+      btn.innerHTML = `<div class="file-main"><span class="folder-toggle">${open ? '▼' : '▶'}</span><div class="file-meta"><span class="folder-name">${folder}</span><small>Folder</small></div></div>`;
+      btn.addEventListener('click', () => { if (state.openFolders.has(key)) state.openFolders.delete(key); else state.openFolders.add(key); renderFileList(); });
+      elements.fileList.appendChild(btn);
+      if (open) renderEntries(key);
+    });
+    matching.filter((file) => {
+      const dir = file.name.split('/').slice(0, -1).join('/'); return dir === prefix;
+    }).sort((a,b)=>a.name.localeCompare(b.name)).forEach((file) => {
+      const button = document.createElement('button'); button.type='button';
+      button.className=`file-item ${state.selectedFileId===file.id?'active':''} ${state.selectedIds.has(file.id)?'selected':''}`;
+      button.innerHTML=`<div class="file-main"><span class="file-icon">${file.type.toUpperCase().slice(0,2)}</span><div class="file-meta"><span class="file-name">${file.name.split('/').pop()}</span><small>${file.type.toUpperCase()} • ${formatBytes(file.size||file.content?.length||0)}</small></div></div><span class="file-check"></span>`;
+      button.addEventListener('click',(event)=>{ if(event.target.closest('.file-check')) { toggleSelect(file.id); return; } state.selectedFileId=file.id; renderViewer(file); renderFileList(); });
+      elements.fileList.appendChild(button);
+    });
+  };
+  renderEntries('');
+}
 function renderViewer(file) {
   if (!elements.viewer) return;
 
@@ -265,6 +278,33 @@ function showProgressSequence() {
   });
 }
 
+const HISTORY_KEY = 'xenzio-fetch-history-v1';
+const HISTORY_TTL = 60 * 60 * 1000;
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]').filter(item => Date.now() - item.createdAt < HISTORY_TTL); } catch (_) { return []; }
+}
+function saveHistory(data) {
+  const list = getHistory().filter(item => item.url !== data.url);
+  list.unshift({ url: data.url, fileCount: data.fileCount, createdAt: Date.now() });
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 20)));
+  renderHistory();
+}
+function renderHistory() {
+  const list = getHistory();
+  if (!list.length) localStorage.removeItem(HISTORY_KEY);
+  if (elements.historyMeta) elements.historyMeta.textContent = 'Resets every 1 hour';
+  if (!elements.historyList) return;
+  elements.historyList.innerHTML = '';
+  if (!list.length) { elements.historyList.innerHTML='<div class="viewer-empty"><p>No fetch history yet.</p></div>'; return; }
+  list.forEach(item => {
+    const button=document.createElement('button'); button.type='button'; button.className='history-item';
+    button.innerHTML=`<span><strong>${escapeHtml(new URL(item.url).hostname)}</strong><small>${escapeHtml(item.url)} • ${item.fileCount} files</small></span><time>${new Date(item.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time>`;
+    button.addEventListener('click',()=>{ elements.urlInput.value=item.url; elements.urlInput.focus(); });
+    elements.historyList.appendChild(button);
+  });
+}
+setInterval(renderHistory, 60 * 1000);
+
 async function handleSubmit(event) {
   event.preventDefault();
   const url = elements.urlInput.value.trim();
@@ -287,6 +327,7 @@ async function handleSubmit(event) {
     recentScanState.size = data.totalSize || 0;
     recentScanState.time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     updateRecentScanMeta();
+    saveHistory(data);
 
     updateStats({
       fileCount: data.fileCount,
@@ -409,3 +450,5 @@ renderTechs([]);
 renderGroups([]);
 renderViewer(null);
 renderFileList();
+
+renderHistory();
